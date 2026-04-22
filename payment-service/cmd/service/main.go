@@ -1,24 +1,50 @@
 package main
 
 import (
+	"log"
+	"net"
+	"os"
+
 	"payment-service/repository"
-	"payment-service/transport/http"
+	servicegrpc "payment-service/transport/grpc"
 	"payment-service/usecase"
 
-	"github.com/gin-gonic/gin"
+	paymentv1 "github.com/almanac13/ADP2_asik2_generated/payment/v1"
+	"github.com/joho/godotenv"
+	"google.golang.org/grpc"
 )
 
 func main() {
-	db := repository.NewDB("postgres://postgres:postgres@localhost:5432/payment_db?sslmode=disable")
+	_ = godotenv.Load()
 
+	dbURL := os.Getenv("PAYMENT_DB_URL")
+	grpcPort := os.Getenv("PAYMENT_GRPC_PORT")
+
+	if dbURL == "" {
+		log.Fatal("PAYMENT_DB_URL is required")
+	}
+	if grpcPort == "" {
+		grpcPort = "50052"
+	}
+
+	db := repository.NewDB(dbURL)
 	repo := repository.NewPaymentRepo(db)
-	usecase := usecase.NewPaymentUsecase(repo)
-	handler := http.NewPaymentHandler(usecase)
+	uc := usecase.NewPaymentUsecase(repo)
 
-	r := gin.Default()
+	lis, err := net.Listen("tcp", ":"+grpcPort)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	r.POST("/payments", handler.CreatePayment)
-	r.GET("/payments/:order_id", handler.GetPayment)
+	server := grpc.NewServer(
+		grpc.UnaryInterceptor(servicegrpc.LoggingInterceptor),
+	)
 
-	r.Run(":8081")
+	paymentv1.RegisterPaymentServiceServer(server, servicegrpc.NewPaymentServer(uc))
+
+	log.Printf("payment-service gRPC running on :%s", grpcPort)
+
+	if err := server.Serve(lis); err != nil {
+		log.Fatal(err)
+	}
 }

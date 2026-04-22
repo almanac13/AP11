@@ -3,9 +3,12 @@ package usecase
 import (
 	"errors"
 	"payment-service/domain"
+	"time"
 
 	"github.com/google/uuid"
 )
+
+var ErrInvalidAmount = errors.New("invalid amount")
 
 type PaymentUsecase struct {
 	repo PaymentRepository
@@ -21,10 +24,9 @@ func (u *PaymentUsecase) GetPayment(orderID string) (*domain.Payment, error) {
 
 func (u *PaymentUsecase) ProcessPayment(orderID string, amount int64, idempotencyKey string) (*domain.Payment, error) {
 	if amount <= 0 {
-		return nil, errors.New("invalid amount")
+		return nil, ErrInvalidAmount
 	}
 
-	// Idempotency: if payment for this order already exists, return it (BONUS)
 	if idempotencyKey != "" {
 		existing, err := u.repo.GetByOrderID(orderID)
 		if err == nil && existing != nil {
@@ -37,9 +39,9 @@ func (u *PaymentUsecase) ProcessPayment(orderID string, amount int64, idempotenc
 		OrderID:       orderID,
 		TransactionID: uuid.New().String(),
 		Amount:        amount,
+		CreatedAt:     time.Now(),
 	}
 
-	// BUSINESS RULE: amount > 100000 → Declined
 	if amount > 100000 {
 		payment.Status = "Declined"
 	} else {

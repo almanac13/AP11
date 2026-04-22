@@ -3,14 +3,28 @@ package repository
 import (
 	"database/sql"
 	"order-service/domain"
+	"sync"
+	"time"
 )
+
+type OrderStatusEvent struct {
+	OrderID   string
+	Status    string
+	UpdatedAt time.Time
+}
 
 type orderRepo struct {
 	db *sql.DB
+
+	mu          sync.RWMutex
+	subscribers map[string][]chan OrderStatusEvent
 }
 
 func NewOrderRepo(db *sql.DB) *orderRepo {
-	return &orderRepo{db: db}
+	return &orderRepo{
+		db:          db,
+		subscribers: make(map[string][]chan OrderStatusEvent),
+	}
 }
 
 func (r *orderRepo) Create(o domain.Order) error {
@@ -64,5 +78,54 @@ func (r *orderRepo) UpdateStatus(id string, status string) error {
 		"UPDATE orders SET status=$1 WHERE id=$2",
 		status, id,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+
+	r.publish(OrderStatusEvent{
+		OrderID:   id,
+		Status:    status,
+		UpdatedAt: time.Now(),
+	})
+
+	return nil
+}
+
+func (r *orderRepo) Subscribe(orderID string) chan OrderStatusEvent {
+	ch := make(chan OrderStatusEvent, 10)
+
+	r.mu.Lock()
+	r.subscribers[orderID] = append(r.subscribers[orderID], ch)
+	r.mu.Unlock()
+
+	return ch
+}
+
+func (r *orderRepo) Unsubscribe(orderID string, target chan OrderStatusEvent) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	list := r.subscribers[orderID]
+	result := make([]chan OrderStatusEvent, 0, len(list))
+
+	for _, ch := range list {
+		if ch != target {
+			result = append(result, ch)
+		}
+	}
+
+	r.subscribers[orderID] = result
+	close(target)
+}
+
+func (r *orderRepo) publish(event OrderStatusEvent) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for _, ch := range r.subscribers[event.OrderID] {
+		select {
+		case ch <- event:
+		default:
+		}
+	}
 }

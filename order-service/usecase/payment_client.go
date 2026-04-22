@@ -1,66 +1,44 @@
 package usecase
 
 import (
-	"bytes"
-	"encoding/json"
+	"context"
 	"errors"
-	"fmt"
-	"net/http"
 	"time"
+
+	paymentv1 "github.com/almanac13/ADP2_asik2_generated/payment/v1"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
-
-type PaymentClient struct {
-	baseURL string
-	client  *http.Client
-}
-
-func NewPaymentClient(url string) *PaymentClient {
-	return &PaymentClient{
-		baseURL: url,
-		client: &http.Client{
-			Timeout: 2 * time.Second,
-		},
-	}
-}
 
 var ErrPaymentServiceUnavailable = errors.New("payment service unavailable")
 
-func (p *PaymentClient) Pay(orderID string, amount int64) (string, error) {
-	body := map[string]interface{}{
-		"order_id": orderID,
-		"amount":   amount,
-	}
+type PaymentClient struct {
+	client paymentv1.PaymentServiceClient
+}
 
-	jsonBody, _ := json.Marshal(body)
-
-	resp, err := p.client.Post(p.baseURL+"/payments", "application/json", bytes.NewBuffer(jsonBody))
+func NewPaymentClient(addr string) (*PaymentClient, error) {
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		// Payment service is down or timed out
+		return nil, err
+	}
+
+	return &PaymentClient{
+		client: paymentv1.NewPaymentServiceClient(conn),
+	}, nil
+}
+
+func (p *PaymentClient) Pay(orderID string, amount int64) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	resp, err := p.client.ProcessPayment(ctx, &paymentv1.PaymentRequest{
+		OrderId:        orderID,
+		Amount:         amount,
+		IdempotencyKey: orderID,
+	})
+	if err != nil {
 		return "", ErrPaymentServiceUnavailable
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode >= 500 {
-		return "", ErrPaymentServiceUnavailable
-	}
-
-	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("invalid response from payment service")
-	}
-
-	statusVal, ok := result["Status"]
-	if !ok {
-		statusVal, ok = result["status"]
-	}
-	if !ok {
-		return "", fmt.Errorf("missing status in payment response")
-	}
-
-	status, ok := statusVal.(string)
-	if !ok {
-		return "", fmt.Errorf("invalid status type in payment response")
-	}
-
-	return status, nil
+	return resp.Status, nil
 }
