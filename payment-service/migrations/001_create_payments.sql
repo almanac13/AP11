@@ -3,5 +3,6 @@ CREATE TABLE payments (
     order_id TEXT,
     transaction_id TEXT,
     amount BIGINT,
-    status TEXT
+    status TEXT,
+    created_at TIMESTAMP
 );

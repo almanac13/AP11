@@ -10,7 +10,7 @@ require (
 require google.golang.org/genproto/googleapis/rpc v0.0.0-20260120221211-b8f7ae30c516 // indirect
 
 require (
-	github.com/almanac13/ADP2_asik2_generated v1.0.0
+	github.com/almanac13/ADP2_asik2_generated v1.0.2
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/bytedance/sonic v1.15.0 // indirect
 	github.com/bytedance/sonic/loader v0.5.0 // indirect

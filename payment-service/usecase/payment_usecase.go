@@ -55,3 +55,11 @@ func (u *PaymentUsecase) ProcessPayment(orderID string, amount int64, idempotenc
 
 	return &payment, nil
 }
+
+func (u *PaymentUsecase) ListPayments(status string) ([]domain.Payment, error) {
+	if status == "" {
+		return nil, errors.New("status is required")
+	}
+
+	return u.repo.ListByStatus(status)
+}
