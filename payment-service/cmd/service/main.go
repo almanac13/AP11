@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 
+	"payment-service/messaging"
 	"payment-service/repository"
 	servicegrpc "payment-service/transport/grpc"
 	"payment-service/usecase"
@@ -29,7 +30,19 @@ func main() {
 
 	db := repository.NewDB(dbURL)
 	repo := repository.NewPaymentRepo(db)
-	uc := usecase.NewPaymentUsecase(repo)
+
+	rabbitURL := os.Getenv("RABBITMQ_URL")
+	if rabbitURL == "" {
+		rabbitURL = "amqp://guest:guest@localhost:5672/"
+	}
+
+	publisher, err := messaging.NewRabbitMQPublisher(rabbitURL, "payment.completed")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer publisher.Close()
+
+	uc := usecase.NewPaymentUsecase(repo, publisher)
 
 	lis, err := net.Listen("tcp", ":"+grpcPort)
 	if err != nil {

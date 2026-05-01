@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"errors"
+	"log"
 	"payment-service/domain"
 	"time"
 
@@ -11,11 +12,15 @@ import (
 var ErrInvalidAmount = errors.New("invalid amount")
 
 type PaymentUsecase struct {
-	repo PaymentRepository
+	repo      PaymentRepository
+	publisher EventPublisher
 }
 
-func NewPaymentUsecase(r PaymentRepository) *PaymentUsecase {
-	return &PaymentUsecase{repo: r}
+func NewPaymentUsecase(r PaymentRepository, publisher EventPublisher) *PaymentUsecase {
+	return &PaymentUsecase{
+		repo:      r,
+		publisher: publisher,
+	}
 }
 
 func (u *PaymentUsecase) GetPayment(orderID string) (*domain.Payment, error) {
@@ -51,6 +56,12 @@ func (u *PaymentUsecase) ProcessPayment(orderID string, amount int64, idempotenc
 	err := u.repo.Create(payment)
 	if err != nil {
 		return nil, err
+	}
+
+	if payment.Status == "Authorized" && u.publisher != nil {
+		if err := u.publisher.PublishPaymentCompleted(payment); err != nil {
+			log.Printf("failed to publish payment completed event: %v", err)
+		}
 	}
 
 	return &payment, nil
