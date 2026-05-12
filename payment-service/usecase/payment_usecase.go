@@ -2,7 +2,6 @@ package usecase
 
 import (
 	"errors"
-	"log"
 	"payment-service/domain"
 	"time"
 
@@ -58,9 +57,9 @@ func (u *PaymentUsecase) ProcessPayment(orderID string, amount int64, idempotenc
 		return nil, err
 	}
 
-	if payment.Status == "Authorized" && u.publisher != nil {
+	if u.publisher != nil {
 		if err := u.publisher.PublishPaymentCompleted(payment); err != nil {
-			log.Printf("failed to publish payment completed event: %v", err)
+			return nil, err
 		}
 	}
 

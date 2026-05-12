@@ -30,6 +30,7 @@ func main() {
 	if rabbitURL == "" {
 		rabbitURL = "amqp://guest:guest@localhost:5672/"
 	}
+	log.Println("RabbitMQ URL:", rabbitURL)
 
 	conn, err := amqp.Dial(rabbitURL)
 	if err != nil {
@@ -103,9 +104,11 @@ func main() {
 			msg.Ack(false)
 		}
 	}()
+	log.Println("Queue declared:", queueName)
 
 	log.Println("notification-service is listening for payment.completed events")
 
 	<-stop
 	log.Println("notification-service shutting down")
+
 }
