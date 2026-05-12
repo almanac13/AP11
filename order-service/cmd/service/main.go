@@ -4,7 +4,11 @@ import (
 	"log"
 	"net"
 	"os"
+	"strconv"
+	"time"
 
+	"order-service/cache"
+	"order-service/middleware"
 	"order-service/repository"
 	servicegrpc "order-service/transport/grpc"
 	httptransport "order-service/transport/http"
@@ -23,6 +27,8 @@ func main() {
 	httpPort := os.Getenv("ORDER_HTTP_PORT")
 	grpcPort := os.Getenv("ORDER_GRPC_PORT")
 	paymentAddr := os.Getenv("PAYMENT_GRPC_ADDR")
+	redisAddr := os.Getenv("REDIS_ADDR")
+	cacheTTLValue := os.Getenv("CACHE_TTL")
 
 	if dbURL == "" {
 		log.Fatal("ORDER_DB_URL is required")
@@ -36,6 +42,17 @@ func main() {
 	if paymentAddr == "" {
 		log.Fatal("PAYMENT_GRPC_ADDR is required")
 	}
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+	if cacheTTLValue == "" {
+		cacheTTLValue = "5m"
+	}
+
+	cacheTTL, err := time.ParseDuration(cacheTTLValue)
+	if err != nil {
+		log.Fatalf("invalid CACHE_TTL: %v", err)
+	}
 
 	db := repository.NewDB(dbURL)
 	repo := repository.NewOrderRepo(db)
@@ -45,11 +62,21 @@ func main() {
 		log.Fatal(err)
 	}
 
-	uc := usecase.NewOrderUsecase(repo, paymentClient)
+	redisClient := cache.NewRedisClient(redisAddr)
+	orderCache := cache.NewRedisOrderCache(redisClient, cacheTTL)
+
+	uc := usecase.NewOrderUsecase(repo, paymentClient, orderCache)
 	handler := httptransport.NewOrderHandler(uc)
 
 	go func() {
 		r := gin.Default()
+
+		rateLimit, _ := strconv.ParseInt(os.Getenv("RATE_LIMIT"), 10, 64)
+		if rateLimit <= 0 {
+			rateLimit = 10
+		}
+		r.Use(middleware.RedisRateLimiter(redisClient, rateLimit, time.Minute))
+
 		r.POST("/orders", handler.CreateOrder)
 		r.GET("/orders/:id", handler.GetOrder)
 		r.PATCH("/orders/:id/cancel", handler.CancelOrder)
